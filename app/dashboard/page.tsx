@@ -76,6 +76,7 @@ function Dashboard() {
   const selLang = LANGS.find((l) => l.code === lang);
   const selMode = MODES.find((m) => m.id === mode);
   const selDensity = DENSITIES.find((d) => d.val === density);
+  const modeLabel = selMode ? (selMode.id === "codemix" && selLang ? selLang.mix : selMode.name) : "";
 
   const handleFile = (f: File) => {
     if (!isSupported(f.name)) {
@@ -182,308 +183,360 @@ function Dashboard() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
-  const card = (content: React.ReactNode) => (
-    <div className="card-skeu" style={{ padding: "clamp(24px, 4vw, 40px)", minHeight: 360 }}>{content}</div>
-  );
+  // Value shown under each step in the sidebar.
+  const stepVals: Record<number, string> = {
+    1: file?.name || "",
+    2: selLang ? selLang.name : "",
+    3: modeLabel,
+    4: selDensity?.short || "",
+    5: done ? "Captions ready" : "",
+  };
+
+  const goStep = (id: number) => {
+    if (generating) return;
+    if (id < step || done) { setStep(id); setDone(false); }
+  };
 
   return (
-    <div style={{ minHeight: "100svh", paddingTop: 60, paddingBottom: 64, background: "var(--bg)" }}>
-      <div style={{ maxWidth: done && video ? 760 : 620, margin: "0 auto", padding: "40px 20px 0" }}>
+    <div style={{ minHeight: "100svh", paddingTop: 60, paddingBottom: 72, background: "var(--bg)" }}>
+      <div style={{ maxWidth: 1040, margin: "0 auto", padding: "44px 20px 0" }}>
 
         {/* Header */}
-        <div style={{ marginBottom: 40 }}>
-          <h1 style={{ fontSize: "clamp(28px, 5vw, 40px)", fontWeight: 800, letterSpacing: "-0.04em", color: "var(--text-1)", marginBottom: 6 }}>
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontSize: "clamp(32px, 6vw, 52px)", fontWeight: 800, letterSpacing: "-0.045em", color: "var(--text-1)", marginBottom: 8, lineHeight: 1.02 }}>
             Generate Captions
           </h1>
-          <p style={{ fontSize: 14, color: "var(--text-3)", letterSpacing: "-0.01em" }}>Five steps. One perfect caption file.</p>
+          <p style={{ fontSize: 15, color: "var(--text-3)", letterSpacing: "-0.01em" }}>
+            Upload, choose your settings, and get a frame-perfect SRT in five quick steps.
+          </p>
         </div>
 
-        {/* Step indicators */}
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
-          {STEPS.map((s, i) => (
-            <div key={s.id} style={{ display: "flex", alignItems: "center", flex: i < STEPS.length - 1 ? 1 : 0 }}>
-              <button onClick={() => { if (s.id < step && !generating) { setStep(s.id); setDone(false); } }}
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: s.id < step ? "pointer" : "default" }}>
-                <div style={{
-                  width: 34, height: 34, borderRadius: "50%",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  background: step > s.id ? "var(--silver)" : step === s.id ? "var(--chrome)" : "var(--bg3)",
-                  border: `1px solid ${step === s.id ? "var(--silver)" : "var(--border-mid)"}`,
-                  boxShadow: step === s.id ? "0 0 16px rgba(200,200,200,0.12)" : "none",
-                  transition: "all 0.3s",
-                }}>
-                  {step > s.id ? <Check size={13} color="var(--bg)" /> : <s.icon size={13} color={step === s.id ? "var(--bg)" : "var(--text-3)"} />}
-                </div>
-                <span style={{ fontSize: 10, color: step === s.id ? "var(--text-1)" : "var(--text-3)", fontWeight: 500, letterSpacing: "-0.005em", whiteSpace: "nowrap" }}>
-                  {s.label}
-                </span>
-              </button>
-              {i < STEPS.length - 1 && (
-                <div style={{ flex: 1, height: 1, background: step > s.id ? "var(--silver)" : "var(--border-mid)", margin: "0 6px", marginBottom: 18, transition: "background 0.4s" }} />
-              )}
-            </div>
-          ))}
-        </div>
+        {/* Main card: sidebar + panel */}
+        <div className="card-skeu" style={{ overflow: "hidden", padding: 0 }}>
+          <div className="dash-grid">
 
-        {/* Wizard progress bar */}
-        {!generating && !done && (
-          <div className="progress-track" style={{ marginBottom: 20 }}>
-            <div className="progress-fill" style={{ width: `${(step / 5) * 100}%` }} />
-          </div>
-        )}
-
-        {/* Step 1 — Upload */}
-        {step === 1 && !generating && !done && card(
-          <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <p className="t-label" style={{ marginBottom: 16 }}>Step 1 of 5</p>
-            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>Upload your audio or video</h2>
-            <p className="t-small" style={{ marginBottom: 24 }}>MP3, M4A, MP4, MOV. Long files are split automatically — no manual trimming needed.</p>
-
-            {!file ? (
-              <label className={`upload-zone ${dragging ? "drag-over" : ""}`}
-                style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 12, cursor: "pointer" }}
-                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}>
-                <input type="file" accept={ACCEPT_ATTR} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} style={{ display: "none" }} />
-                <div style={{ width: 48, height: 48, borderRadius: 14, background: "var(--bg3)", border: "1px solid var(--border-mid)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Upload size={20} color="var(--text-3)" />
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-1)", marginBottom: 3 }}>
-                    <span style={{ color: "var(--silver)" }}>Click to upload</span> or drag &amp; drop
-                  </p>
-                  <p style={{ fontSize: 12, color: "var(--text-3)" }}>Your file is deleted immediately after processing</p>
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
-                  {["MP3", "M4A", "MP4", "MOV", "Up to 1GB"].map((t) => <span key={t} className="mono-tag">{t}</span>)}
-                </div>
-              </label>
-            ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 18px", borderRadius: 14, background: "var(--glass-bg)", border: "1px solid var(--border-mid)" }}>
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--bg3)", border: "1px solid var(--border-mid)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {video ? <FileVideo size={18} color="var(--silver)" /> : <FileAudio size={18} color="var(--silver)" />}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</p>
-                  <p style={{ fontSize: 11, color: "var(--text-3)" }}>{(video ? "Video · " : "Audio · ") + (file.size / 1024 / 1024).toFixed(1)} MB</p>
-                </div>
-                <button onClick={() => setFile(null)} style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--bg3)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--text-3)" }}>
-                  <X size={12} />
-                </button>
-              </div>
-            )}
-
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 24 }}>
-              <button className="btn btn-primary btn-sm" onClick={() => setStep(2)}
-                style={{ opacity: file ? 1 : 0.35, pointerEvents: file ? "auto" : "none" }}>
-                <span>Continue</span><ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2 — Language */}
-        {step === 2 && !generating && !done && card(
-          <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <p className="t-label" style={{ marginBottom: 16 }}>Step 2 of 5</p>
-            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>What language is spoken?</h2>
-            <p className="t-small" style={{ marginBottom: 24 }}>SAYCAP handles code-mixed speech natively.</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 24 }}>
-              {LANGS.map((l) => (
-                <button key={l.code} onClick={() => setLang(l.code)} className={`select-card ${lang === l.code ? "active" : ""}`} style={{ textAlign: "left" }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em" }}>{l.name}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-2)" }}>{l.native}</div>
-                </button>
-              ))}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <button onClick={() => setStep(1)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
-              <button className="btn btn-primary btn-sm" onClick={() => setStep(3)}
-                style={{ opacity: lang ? 1 : 0.35, pointerEvents: lang ? "auto" : "none" }}>
-                <span>Continue</span><ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3 — Mode */}
-        {step === 3 && !generating && !done && card(
-          <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <p className="t-label" style={{ marginBottom: 16 }}>Step 3 of 5</p>
-            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>How should captions look?</h2>
-            <p className="t-small" style={{ marginBottom: 24 }}>Every line in your SRT follows this format.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-              {MODES.map((m) => {
-                const label = m.id === "codemix" && selLang ? selLang.mix : m.name;
+            {/* ── Sidebar ── */}
+            <div className="dash-side" style={{ background: "var(--bg2)", borderRight: "1px solid var(--border)", padding: "22px 0" }}>
+              {STEPS.map((s, i) => {
+                const state = done ? "done" : step > s.id ? "done" : step === s.id ? "active" : "todo";
+                const clickable = !generating && (s.id < step || done);
                 return (
-                  <button key={m.id} onClick={() => setMode(m.id)} className={`select-card ${mode === m.id ? "active" : ""}`}
-                    style={{ display: "flex", alignItems: "flex-start", gap: 12, textAlign: "left" }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.dot, flexShrink: 0, marginTop: 4 }} />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em", marginBottom: 2 }}>{label}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.5, marginBottom: 3 }}>{m.desc}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "monospace" }}>{m.ex}</div>
-                    </div>
-                  </button>
+                  <div key={s.id}>
+                    <button
+                      onClick={() => goStep(s.id)}
+                      className={`dash-step ${state === "active" ? "active" : ""}`}
+                      style={{
+                        display: "flex", alignItems: "flex-start", gap: 12, width: "100%",
+                        padding: "13px 22px", cursor: clickable ? "pointer" : "default",
+                        background: state === "active" ? "var(--glass-bg-hi)" : "transparent",
+                        border: "none", borderLeft: `3px solid ${state === "active" ? "var(--silver)" : "transparent"}`,
+                        textAlign: "left", transition: "background 0.15s",
+                      }}>
+                      <div style={{
+                        width: 30, height: 30, borderRadius: "50%", flexShrink: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: state === "done" ? "var(--silver)" : state === "active" ? "var(--chrome)" : "var(--bg3)",
+                        border: `1px solid ${state === "active" ? "var(--silver)" : "var(--border-mid)"}`,
+                        boxShadow: state === "active" ? "0 0 14px rgba(200,200,200,0.12)" : "none",
+                        transition: "all 0.25s",
+                      }}>
+                        {state === "done" ? <Check size={13} color="var(--bg)" /> : <s.icon size={13} color={state === "active" ? "var(--bg)" : "var(--text-3)"} />}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0, paddingTop: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.01em", color: state === "active" ? "var(--text-1)" : state === "done" ? "var(--text-2)" : "var(--text-3)" }}>
+                          {s.label}
+                        </div>
+                        {stepVals[s.id] && (
+                          <div className="dash-val" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
+                            {stepVals[s.id]}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                    {i < STEPS.length - 1 && (
+                      <div className="dash-connector" style={{ width: 1.5, height: 10, marginLeft: 37, background: step > s.id || done ? "var(--silver)" : "var(--border-mid)", transition: "background 0.3s" }} />
+                    )}
+                  </div>
                 );
               })}
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <button onClick={() => setStep(2)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
-              <button className="btn btn-primary btn-sm" onClick={() => setStep(4)}
-                style={{ opacity: mode ? 1 : 0.35, pointerEvents: mode ? "auto" : "none" }}>
-                <span>Continue</span><ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        )}
 
-        {/* Step 4 — Density */}
-        {step === 4 && !generating && !done && card(
-          <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <p className="t-label" style={{ marginBottom: 16 }}>Step 4 of 5</p>
-            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>How many words per caption?</h2>
-            <p className="t-small" style={{ marginBottom: 24 }}>3 words is the short-form standard for Reels, Shorts and YouTube.</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
-              {DENSITIES.map((d) => (
-                <button key={d.val} onClick={() => setDensity(d.val)} className={`select-card ${density === d.val ? "active" : ""}`}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em" }}>{d.label}</span>
-                  {d.val === 3 && <span className="mono-tag">Recommended</span>}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <button onClick={() => setStep(3)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
-              <button className="btn btn-primary btn-sm" onClick={() => setStep(5)}>
-                <span>Continue</span><ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        )}
+            {/* ── Panel ── */}
+            <div style={{ padding: "clamp(28px, 4vw, 44px)", display: "flex", flexDirection: "column", minHeight: 480 }}>
 
-        {/* Step 5 — Review */}
-        {step === 5 && !generating && !done && card(
-          <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <p className="t-label" style={{ marginBottom: 16 }}>Step 5 of 5</p>
-            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 24 }}>Everything look right?</h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28 }}>
-              {[
-                { label: "File", value: file?.name || "—", goto: 1 },
-                { label: "Language", value: selLang ? `${selLang.name} · ${selLang.native}` : "—", goto: 2 },
-                { label: "Output mode", value: selMode ? (selMode.id === "codemix" && selLang ? selLang.mix : selMode.name) : "—", goto: 3 },
-                { label: "Caption density", value: selDensity?.label || "—", goto: 4 },
-              ].map((item) => (
-                <div key={item.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderRadius: 12, background: "var(--glass-bg)", border: "1px solid var(--border)" }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 11, color: "var(--text-3)", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600, marginBottom: 2 }}>{item.label}</div>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-1)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.value}</div>
-                  </div>
-                  <button onClick={() => setStep(item.goto)} style={{ fontSize: 11, color: "var(--text-3)", background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", flexShrink: 0, marginLeft: 12 }}>edit</button>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <button onClick={() => setStep(4)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
-              <button className="btn btn-primary" onClick={runGenerate}><span>Generate captions</span></button>
-            </div>
-          </div>
-        )}
+              {/* Step 1 — Upload */}
+              {step === 1 && !generating && !done && (
+                <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
+                  <p className="t-label" style={{ marginBottom: 14 }}>Step 1 of 5</p>
+                  <h2 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>Upload your audio or video</h2>
+                  <p className="t-small" style={{ marginBottom: 26 }}>MP3, M4A, MP4, MOV. Long files are split automatically — no manual trimming needed.</p>
 
-        {/* Generating */}
-        {generating && card(
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 0", gap: 24 }}>
-            <div style={{ position: "relative", width: 60, height: 60 }}>
-              <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid transparent", borderTopColor: "var(--silver)", animation: "spin 0.9s linear infinite" }} />
-              <div style={{ position: "absolute", inset: 7, borderRadius: "50%", border: "1.5px solid transparent", borderBottomColor: "var(--text-3)", animation: "spin 0.6s linear infinite reverse" }} />
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <p style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.025em", color: "var(--text-1)", marginBottom: 4 }}>Generating your captions&hellip;</p>
-              <p style={{ fontSize: 13, color: "var(--text-3)" }}>{stage}</p>
-            </div>
-            <div style={{ width: "100%", maxWidth: 280 }}>
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${progress}%` }} />
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-                <span style={{ fontSize: 11, color: "var(--text-3)" }}>Processing</span>
-                <span style={{ fontSize: 11, color: "var(--silver)" }}>{progress}%</span>
-              </div>
-            </div>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          </div>
-        )}
-
-        {/* Done */}
-        {done && card(
-          <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-              <div style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(200,200,200,0.1)", border: "1px solid rgba(200,200,200,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Check size={13} color="var(--silver)" />
-              </div>
-              <span style={{ fontSize: 14, fontWeight: 500, color: "var(--silver)" }}>Captions ready</span>
-              <span style={{ fontSize: 12, color: "var(--text-3)", marginLeft: 4 }}>
-                {selLang?.name} · {selMode ? (selMode.id === "codemix" && selLang ? selLang.mix : selMode.name) : ""} · {selDensity?.short}
-              </span>
-            </div>
-
-            {/* Video preview with live caption overlay */}
-            {video && (
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ position: "relative", borderRadius: 14, overflow: "hidden", background: "#000", border: "1px solid var(--border)" }}>
-                  <video ref={videoRef} controls playsInline style={{ width: "100%", display: "block", maxHeight: 360 }}
-                    onTimeUpdate={(e) => {
-                      const t = e.currentTarget.currentTime;
-                      const cue = cues.find((c) => t >= c.start && t < c.end);
-                      setOverlayText(cue ? cue.text : "");
-                    }} />
-                  {overlayText && (
-                    <div style={{
-                      position: "absolute", left: 0, right: 0, bottom: "8%", textAlign: "center",
-                      padding: "0 16px", pointerEvents: "none",
-                      fontFamily: `'${font}', sans-serif`, fontWeight: 700, fontSize: "clamp(15px, 3.2vw, 26px)",
-                      color: "#fff", textShadow: "0 2px 6px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9)",
-                    }}>{overlayText}</div>
+                  {!file ? (
+                    <label className={`upload-zone ${dragging ? "drag-over" : ""}`}
+                      style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "56px 24px", gap: 14, cursor: "pointer" }}
+                      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                      onDragLeave={() => setDragging(false)}
+                      onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}>
+                      <input type="file" accept={ACCEPT_ATTR} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} style={{ display: "none" }} />
+                      <div style={{ width: 56, height: 56, borderRadius: 16, background: "var(--bg3)", border: "1px solid var(--border-mid)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Upload size={24} color="var(--text-3)" />
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <p style={{ fontSize: 15, fontWeight: 500, color: "var(--text-1)", marginBottom: 4 }}>
+                          <span style={{ color: "var(--silver)" }}>Click to upload</span> or drag &amp; drop
+                        </p>
+                        <p style={{ fontSize: 12, color: "var(--text-3)" }}>Your file is deleted immediately after processing</p>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+                        {["MP3", "M4A", "MP4", "MOV", "Up to 1GB"].map((t) => <span key={t} className="mono-tag">{t}</span>)}
+                      </div>
+                    </label>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 20px", borderRadius: 14, background: "var(--glass-bg)", border: "1px solid var(--border-mid)" }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 11, background: "var(--bg3)", border: "1px solid var(--border-mid)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {video ? <FileVideo size={20} color="var(--silver)" /> : <FileAudio size={20} color="var(--silver)" />}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</p>
+                        <p style={{ fontSize: 12, color: "var(--text-3)" }}>{(video ? "Video · " : "Audio · ") + (file.size / 1024 / 1024).toFixed(1)} MB</p>
+                      </div>
+                      <button onClick={() => setFile(null)} style={{ width: 30, height: 30, borderRadius: "50%", background: "var(--bg3)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--text-3)" }}>
+                        <X size={13} />
+                      </button>
+                    </div>
                   )}
-                </div>
-                {fonts.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, color: "var(--text-3)" }}>Caption font</span>
-                    <select value={font} onChange={(e) => { loadGoogleFont(e.target.value); setFont(e.target.value); }}
-                      style={{ background: "var(--glass-bg)", border: "1px solid var(--border)", color: "var(--text-1)", borderRadius: 10, padding: "8px 12px", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
-                      {fonts.map((f) => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                    {selLang && selLang.scriptFonts.length > 0 && (
-                      <span style={{ fontSize: 11, color: "var(--text-3)" }}>Pick a “Noto” font for native-script captions.</span>
-                    )}
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 28 }}>
+                    <button className="btn btn-primary btn-sm" onClick={() => setStep(2)}
+                      style={{ opacity: file ? 1 : 0.35, pointerEvents: file ? "auto" : "none" }}>
+                      <span>Continue</span><ChevronRight size={14} />
+                    </button>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            {/* SRT preview */}
-            <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", marginBottom: 20, maxHeight: 220, overflow: "auto", fontFamily: "monospace", whiteSpace: "pre-wrap", fontSize: 12, color: "var(--text-1)", lineHeight: 1.6 }}>
-              {srt}
-            </div>
+              {/* Step 2 — Language */}
+              {step === 2 && !generating && !done && (
+                <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
+                  <p className="t-label" style={{ marginBottom: 14 }}>Step 2 of 5</p>
+                  <h2 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>What language is spoken?</h2>
+                  <p className="t-small" style={{ marginBottom: 26 }}>SAYCAP handles code-mixed speech natively.</p>
+                  <div className="dash-lang-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 28 }}>
+                    {LANGS.map((l) => (
+                      <button key={l.code} onClick={() => setLang(l.code)} className={`select-card ${lang === l.code ? "active" : ""}`} style={{ textAlign: "left" }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em" }}>{l.name}</div>
+                        <div style={{ fontSize: 13, color: "var(--text-2)" }}>{l.native}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <button onClick={() => setStep(1)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => setStep(3)}
+                      style={{ opacity: lang ? 1 : 0.35, pointerEvents: lang ? "auto" : "none" }}>
+                      <span>Continue</span><ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
-            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <button className="btn btn-primary btn-sm" onClick={download} style={{ flex: 1, justifyContent: "center", minWidth: 160 }}>
-                <Download size={14} /><span>Download .srt</span>
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard?.writeText(srt); }} style={{ flex: 1, justifyContent: "center", minWidth: 160 }}>
-                <span>Copy to clipboard</span>
-              </button>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <button onClick={reset} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>Start over</button>
-              <Link href="/history" style={{ fontSize: 13, color: "var(--silver)", textDecoration: "none" }}>View history →</Link>
+              {/* Step 3 — Mode */}
+              {step === 3 && !generating && !done && (
+                <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
+                  <p className="t-label" style={{ marginBottom: 14 }}>Step 3 of 5</p>
+                  <h2 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>How should captions look?</h2>
+                  <p className="t-small" style={{ marginBottom: 26 }}>Every line in your SRT follows this format.</p>
+                  <div className="dash-mode-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 26 }}>
+                    {MODES.map((m) => {
+                      const label = m.id === "codemix" && selLang ? selLang.mix : m.name;
+                      return (
+                        <button key={m.id} onClick={() => setMode(m.id)} className={`select-card ${mode === m.id ? "active" : ""}`}
+                          style={{ display: "flex", alignItems: "flex-start", gap: 12, textAlign: "left" }}>
+                          <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.dot, flexShrink: 0, marginTop: 5 }} />
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em", marginBottom: 3 }}>{label}</div>
+                            <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5, marginBottom: 4 }}>{m.desc}</div>
+                            <div style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "monospace" }}>{m.ex}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <button onClick={() => setStep(2)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => setStep(4)}
+                      style={{ opacity: mode ? 1 : 0.35, pointerEvents: mode ? "auto" : "none" }}>
+                      <span>Continue</span><ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4 — Density */}
+              {step === 4 && !generating && !done && (
+                <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
+                  <p className="t-label" style={{ marginBottom: 14 }}>Step 4 of 5</p>
+                  <h2 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>How many words per caption?</h2>
+                  <p className="t-small" style={{ marginBottom: 26 }}>3 words is the short-form standard for Reels, Shorts and YouTube.</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28 }}>
+                    {DENSITIES.map((d) => (
+                      <button key={d.val} onClick={() => setDensity(d.val)} className={`select-card ${density === d.val ? "active" : ""}`}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em" }}>{d.label}</span>
+                        {d.val === 3 && <span className="mono-tag">Recommended</span>}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <button onClick={() => setStep(3)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => setStep(5)}>
+                      <span>Continue</span><ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 5 — Review */}
+              {step === 5 && !generating && !done && (
+                <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
+                  <p className="t-label" style={{ marginBottom: 14 }}>Step 5 of 5</p>
+                  <h2 style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 26 }}>Everything look right?</h2>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 30 }}>
+                    {[
+                      { label: "File", value: file?.name || "—", goto: 1 },
+                      { label: "Language", value: selLang ? `${selLang.name} · ${selLang.native}` : "—", goto: 2 },
+                      { label: "Output mode", value: modeLabel || "—", goto: 3 },
+                      { label: "Caption density", value: selDensity?.label || "—", goto: 4 },
+                    ].map((item) => (
+                      <div key={item.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderRadius: 12, background: "var(--glass-bg)", border: "1px solid var(--border)" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 11, color: "var(--text-3)", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600, marginBottom: 3 }}>{item.label}</div>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--text-1)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.value}</div>
+                        </div>
+                        <button onClick={() => setStep(item.goto)} style={{ fontSize: 11, color: "var(--text-3)", background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", cursor: "pointer", flexShrink: 0, marginLeft: 12 }}>edit</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <button onClick={() => setStep(4)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
+                    <button className="btn btn-primary" onClick={runGenerate}><span>Generate captions</span></button>
+                  </div>
+                </div>
+              )}
+
+              {/* Generating */}
+              {generating && (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 0", gap: 26 }}>
+                  <div style={{ position: "relative", width: 64, height: 64 }}>
+                    <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid transparent", borderTopColor: "var(--silver)", animation: "spin 0.9s linear infinite" }} />
+                    <div style={{ position: "absolute", inset: 8, borderRadius: "50%", border: "1.5px solid transparent", borderBottomColor: "var(--text-3)", animation: "spin 0.6s linear infinite reverse" }} />
+                  </div>
+                  <div style={{ textAlign: "center" }}>
+                    <p style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.025em", color: "var(--text-1)", marginBottom: 4 }}>Generating your captions&hellip;</p>
+                    <p style={{ fontSize: 13, color: "var(--text-3)" }}>{stage}</p>
+                  </div>
+                  <div style={{ width: "100%", maxWidth: 320 }}>
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${progress}%` }} />
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+                      <span style={{ fontSize: 11, color: "var(--text-3)" }}>Processing</span>
+                      <span style={{ fontSize: 11, color: "var(--silver)" }}>{progress}%</span>
+                    </div>
+                  </div>
+                  <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                </div>
+              )}
+
+              {/* Done */}
+              {done && (
+                <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 22, flexWrap: "wrap" }}>
+                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: "rgba(200,200,200,0.1)", border: "1px solid rgba(200,200,200,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Check size={14} color="var(--silver)" />
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 500, color: "var(--silver)" }}>Captions ready</span>
+                    <span style={{ fontSize: 12, color: "var(--text-3)", marginLeft: 4 }}>
+                      {selLang?.name} · {modeLabel} · {selDensity?.short}
+                    </span>
+                  </div>
+
+                  {/* Video preview with live caption overlay */}
+                  {video && (
+                    <div style={{ marginBottom: 22 }}>
+                      <div style={{ position: "relative", borderRadius: 14, overflow: "hidden", background: "#000", border: "1px solid var(--border)" }}>
+                        <video ref={videoRef} controls playsInline style={{ width: "100%", display: "block", maxHeight: 420 }}
+                          onTimeUpdate={(e) => {
+                            const t = e.currentTarget.currentTime;
+                            const cue = cues.find((c) => t >= c.start && t < c.end);
+                            setOverlayText(cue ? cue.text : "");
+                          }} />
+                        {overlayText && (
+                          <div style={{
+                            position: "absolute", left: 0, right: 0, bottom: "8%", textAlign: "center",
+                            padding: "0 16px", pointerEvents: "none",
+                            fontFamily: `'${font}', sans-serif`, fontWeight: 700, fontSize: "clamp(15px, 3.2vw, 28px)",
+                            color: "#fff", textShadow: "0 2px 6px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9)",
+                          }}>{overlayText}</div>
+                        )}
+                      </div>
+                      {fonts.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, color: "var(--text-3)" }}>Caption font</span>
+                          <select value={font} onChange={(e) => { loadGoogleFont(e.target.value); setFont(e.target.value); }}
+                            style={{ background: "var(--glass-bg)", border: "1px solid var(--border)", color: "var(--text-1)", borderRadius: 10, padding: "8px 12px", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                            {fonts.map((f) => <option key={f} value={f}>{f}</option>)}
+                          </select>
+                          {selLang && selLang.scriptFonts.length > 0 && (
+                            <span style={{ fontSize: 11, color: "var(--text-3)" }}>Pick a “Noto” font for native-script captions.</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SRT preview */}
+                  <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 18px", marginBottom: 22, maxHeight: 280, overflow: "auto", fontFamily: "monospace", whiteSpace: "pre-wrap", fontSize: 12.5, color: "var(--text-1)", lineHeight: 1.6 }}>
+                    {srt}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+                    <button className="btn btn-primary btn-sm" onClick={download} style={{ flex: 1, justifyContent: "center", minWidth: 180 }}>
+                      <Download size={14} /><span>Download .srt</span>
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard?.writeText(srt); }} style={{ flex: 1, justifyContent: "center", minWidth: 180 }}>
+                      <span>Copy to clipboard</span>
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <button onClick={reset} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>Start over</button>
+                    <Link href="/history" style={{ fontSize: 13, color: "var(--silver)", textDecoration: "none" }}>View history →</Link>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
+        </div>
       </div>
 
       {error && <Modal title={error.title} msg={error.msg} onClose={() => setError(null)} />}
+
+      {/* Responsive: collapse to a single column with a horizontal step strip on small screens */}
+      <style>{`
+        .dash-grid { display: grid; grid-template-columns: 248px 1fr; }
+        @media (max-width: 820px) {
+          .dash-grid { grid-template-columns: 1fr; }
+          .dash-side { flex-direction: row; overflow-x: auto; border-right: none !important; border-bottom: 1px solid var(--border); padding: 14px 8px !important; }
+          .dash-side > div { display: flex; align-items: center; }
+          .dash-step { border-left: none !important; border-bottom: 3px solid transparent; min-width: max-content; padding: 8px 14px !important; }
+          .dash-step.active { border-bottom-color: var(--silver); }
+          .dash-connector { display: none !important; }
+          .dash-val { display: none !important; }
+        }
+        @media (max-width: 560px) {
+          .dash-lang-grid { grid-template-columns: repeat(2, 1fr) !important; }
+          .dash-mode-grid { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </div>
   );
 }
