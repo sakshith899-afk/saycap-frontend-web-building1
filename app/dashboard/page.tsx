@@ -4,9 +4,9 @@ import { Upload, Globe, Type, Sliders, Download, Check, ChevronRight, FileAudio,
 import Link from "next/link";
 import { SignedIn, SignedOut, SignIn, useAuth, useUser } from "@clerk/nextjs";
 import {
-  API_URL, LANGS, MODES, DENSITIES, LATIN_FONTS,
+  API_URL, LANGS, MODES, DENSITIES,
   ACCEPT_ATTR, isSupported, isVideo,
-  parseSRT, loadGoogleFont, type Cue,
+  parseSRT, type Cue,
 } from "@/lib/saycap";
 
 const STEPS = [
@@ -47,6 +47,34 @@ function Modal({ title, msg, onClose }: { title: string; msg: string; onClose: (
   );
 }
 
+// ── Test-phase feedback: a yes/no question that reveals a note box on "yes" ──────
+// (Remove this block, the feedback form, and the /feedback call after testing.)
+function FbYesNo({ q, value, onChange, note, onNote, placeholder }: {
+  q: string; value: string; onChange: (v: string) => void;
+  note: string; onNote: (v: string) => void; placeholder: string;
+}) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <p style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-1)", marginBottom: 10 }}>{q}</p>
+      <div style={{ display: "flex", gap: 8 }}>
+        {["yes", "no"].map((v) => (
+          <button key={v} onClick={() => onChange(v)}
+            style={{
+              padding: "9px 26px", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 600, textTransform: "capitalize",
+              background: value === v ? "var(--silver)" : "var(--bg3)",
+              color: value === v ? "var(--bg)" : "var(--text-2)",
+              border: `1px solid ${value === v ? "var(--silver)" : "var(--border-mid)"}`,
+            }}>{v}</button>
+        ))}
+      </div>
+      {value === "yes" && (
+        <textarea value={note} onChange={(e) => onNote(e.target.value)} placeholder={placeholder} rows={2}
+          style={{ marginTop: 12, width: "100%", resize: "vertical", background: "var(--glass-bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", fontSize: 13, color: "var(--text-1)", fontFamily: "inherit", outline: "none" }} />
+      )}
+    </div>
+  );
+}
+
 // ── Dashboard ────────────────────────────────────────────────────────────────────
 function Dashboard() {
   const { getToken } = useAuth();
@@ -76,10 +104,22 @@ function Dashboard() {
   const videoRef    = useRef<HTMLVideoElement>(null);
   const [cues,        setCues]        = useState<Cue[]>([]);
   const [overlayText, setOverlayText] = useState("");
-  const [fonts,       setFonts]       = useState<string[]>([]);
-  const [font,        setFont]        = useState("");
   const [videoUrl,    setVideoUrl]    = useState("");
   const videoUrlRef   = useRef<string | null>(null);
+
+  // ── Test-phase feedback (remove after testing). Not shown for saycap-test1. ──
+  const TEST_FEEDBACK_EXEMPT = "saycap-test1";
+  const needsFeedbackUser = !!username && username !== TEST_FEEDBACK_EXEMPT;
+  const [fbQuality,   setFbQuality]   = useState(0);   // 1..5
+  const [fbSpelling,  setFbSpelling]  = useState("");  // "yes" | "no"
+  const [fbSpellNote, setFbSpellNote] = useState("");
+  const [fbTiming,    setFbTiming]    = useState("");  // "yes" | "no"
+  const [fbTimeNote,  setFbTimeNote]  = useState("");
+  const [fbOther,     setFbOther]     = useState("");
+  const [fbDone,      setFbDone]      = useState(false);
+  const [fbSending,   setFbSending]   = useState(false);
+  const fbValid = fbQuality > 0 && fbSpelling !== "" && fbTiming !== "";
+  const downloadLocked = needsFeedbackUser && !fbDone;
 
   const selLang = LANGS.find((l) => l.code === lang);
   const selMode = MODES.find((m) => m.id === mode);
@@ -102,19 +142,13 @@ function Dashboard() {
   // Clean up the object URL when leaving / resetting.
   useEffect(() => () => { if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current); }, []);
 
-  const setupVideoPreview = useCallback((srtText: string, f: File, langCode: string) => {
+  const setupVideoPreview = useCallback((srtText: string, f: File) => {
     const parsed = parseSRT(srtText);
     setCues(parsed);
     if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current);
     const url = URL.createObjectURL(f);
     videoUrlRef.current = url;
     setVideoUrl(url);  // bind via state — the <video> element only mounts once `done` is true
-
-    const scriptFonts = LANGS.find((l) => l.code === langCode)?.scriptFonts || [];
-    const fontList = [...scriptFonts, ...LATIN_FONTS];
-    fontList.forEach(loadGoogleFont);
-    setFonts(fontList);
-    setFont(fontList[0] || "sans-serif");
   }, []);
 
   function handleError(status: number, msg: string) {
@@ -181,7 +215,7 @@ function Dashboard() {
 
       setProgress(100);
       setSrt(result.body);
-      if (video) setupVideoPreview(result.body, file, lang);
+      if (video) setupVideoPreview(result.body, file);
       setGenerating(false);
       setDone(true);
     } catch (err: unknown) {
@@ -192,11 +226,39 @@ function Dashboard() {
     }
   }, [file, lang, density, selMode, video, getToken, setupVideoPreview, username]);
 
+  // ── Test-phase feedback submit (best-effort; unlocks download either way) ──
+  const submitFeedback = useCallback(async () => {
+    if (fbSending) return;
+    setFbSending(true);
+    try {
+      const token = await getToken();
+      await fetch(API_URL + "/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          username,
+          fileName: file?.name || "",
+          language: lang,
+          mode: selMode?.apiValue || "",
+          quality: fbQuality,
+          spellingMistakes: fbSpelling === "yes",
+          spellingNote: fbSpelling === "yes" ? fbSpellNote : "",
+          timingAccurate: fbTiming === "yes",
+          timingNote: fbTiming === "yes" ? fbTimeNote : "",
+          otherFeedback: fbOther,
+        }),
+      });
+    } catch { /* never trap a tester — unlock the download regardless */ }
+    setFbDone(true);
+    setFbSending(false);
+  }, [fbSending, getToken, username, file, lang, selMode, fbQuality, fbSpelling, fbSpellNote, fbTiming, fbTimeNote, fbOther]);
+
   const reset = () => {
     if (videoUrlRef.current) { URL.revokeObjectURL(videoUrlRef.current); videoUrlRef.current = null; }
     setStep(1); setFile(null); setVideo(false); setLang(""); setMode(""); setDensity(3);
     setGenerating(false); setDone(false); setProgress(0); setStage(""); setSrt("");
-    setCues([]); setOverlayText(""); setFonts([]); setFont(""); setVideoUrl("");
+    setCues([]); setOverlayText(""); setVideoUrl("");
+    setFbQuality(0); setFbSpelling(""); setFbSpellNote(""); setFbTiming(""); setFbTimeNote(""); setFbOther(""); setFbDone(false); setFbSending(false);
   };
 
   const download = () => {
@@ -498,23 +560,11 @@ function Dashboard() {
                           <div style={{
                             position: "absolute", left: 0, right: 0, bottom: "8%", textAlign: "center",
                             padding: "0 16px", pointerEvents: "none",
-                            fontFamily: `'${font}', sans-serif`, fontWeight: 700, fontSize: "clamp(15px, 3.2vw, 28px)",
+                            fontFamily: "system-ui, -apple-system, sans-serif", fontWeight: 700, fontSize: "clamp(15px, 3.2vw, 28px)",
                             color: "#fff", textShadow: "0 2px 6px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9)",
                           }}>{overlayText}</div>
                         )}
                       </div>
-                      {fonts.length > 0 && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 12, color: "var(--text-3)" }}>Caption font</span>
-                          <select value={font} onChange={(e) => { loadGoogleFont(e.target.value); setFont(e.target.value); }}
-                            style={{ background: "var(--glass-bg)", border: "1px solid var(--border)", color: "var(--text-1)", borderRadius: 10, padding: "8px 12px", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
-                            {fonts.map((f) => <option key={f} value={f}>{f}</option>)}
-                          </select>
-                          {selLang && selLang.scriptFonts.length > 0 && (
-                            <span style={{ fontSize: 11, color: "var(--text-3)" }}>Pick a “Noto” font for native-script captions.</span>
-                          )}
-                        </div>
-                      )}
                     </div>
                   )}
 
@@ -523,14 +573,74 @@ function Dashboard() {
                     {srt}
                   </div>
 
+                  {/* ── TEST-PHASE FEEDBACK (remove after testing period) ── */}
+                  {needsFeedbackUser && !fbDone && (
+                    <div className="card-skeu" style={{ padding: "22px 24px", marginBottom: 18, border: "1px solid var(--border-mid)" }}>
+                      <p style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--text-1)", marginBottom: 4 }}>Quick feedback</p>
+                      <p style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 22 }}>Answer 3 quick questions to unlock your download.</p>
+
+                      {/* Q1 — quality 1..5 */}
+                      <div style={{ marginBottom: 20 }}>
+                        <p style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-1)", marginBottom: 10 }}>
+                          1. How is the caption quality? <span style={{ color: "var(--text-3)", fontWeight: 400 }}>(1 = poor, 5 = great)</span>
+                        </p>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          {[1, 2, 3, 4, 5].map((n) => (
+                            <button key={n} onClick={() => setFbQuality(n)}
+                              style={{
+                                width: 44, height: 44, borderRadius: 10, cursor: "pointer", fontSize: 15, fontWeight: 700,
+                                background: fbQuality === n ? "var(--silver)" : "var(--bg3)",
+                                color: fbQuality === n ? "var(--bg)" : "var(--text-2)",
+                                border: `1px solid ${fbQuality === n ? "var(--silver)" : "var(--border-mid)"}`,
+                              }}>{n}</button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Q2 — spelling, Q3 — timing */}
+                      <FbYesNo q="2. Did you get any spelling mistakes?" value={fbSpelling} onChange={setFbSpelling}
+                        note={fbSpellNote} onNote={setFbSpellNote} placeholder="Which words were misspelled?" />
+                      <FbYesNo q="3. Do you think the timing is accurate?" value={fbTiming} onChange={setFbTiming}
+                        note={fbTimeNote} onNote={setFbTimeNote} placeholder="What felt off about the timing?" />
+
+                      {/* Q4 — open feedback */}
+                      <div style={{ marginBottom: 22 }}>
+                        <p style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-1)", marginBottom: 10 }}>
+                          4. Any other feedback? <span style={{ color: "var(--text-3)", fontWeight: 400 }}>(optional)</span>
+                        </p>
+                        <textarea value={fbOther} onChange={(e) => setFbOther(e.target.value)} rows={2} placeholder="Anything else you'd like to share…"
+                          style={{ width: "100%", resize: "vertical", background: "var(--glass-bg)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", fontSize: 13, color: "var(--text-1)", fontFamily: "inherit", outline: "none" }} />
+                      </div>
+
+                      <button className="btn btn-primary btn-sm" onClick={submitFeedback}
+                        style={{ width: "100%", justifyContent: "center", opacity: fbValid && !fbSending ? 1 : 0.4, pointerEvents: fbValid && !fbSending ? "auto" : "none" }}>
+                        <span>{fbSending ? "Submitting…" : "Submit & unlock download"}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {needsFeedbackUser && fbDone && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", marginBottom: 18, borderRadius: 12, background: "rgba(200,200,200,0.08)", border: "1px solid var(--border-mid)" }}>
+                      <Check size={14} color="var(--silver)" />
+                      <span style={{ fontSize: 13, color: "var(--text-2)" }}>Thanks for the feedback! Your download is unlocked.</span>
+                    </div>
+                  )}
+
                   <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-                    <button className="btn btn-primary btn-sm" onClick={download} style={{ flex: 1, justifyContent: "center", minWidth: 180 }}>
-                      <Download size={14} /><span>Download .srt</span>
+                    <button className="btn btn-primary btn-sm" onClick={download}
+                      style={{ flex: 1, justifyContent: "center", minWidth: 180, opacity: downloadLocked ? 0.4 : 1, pointerEvents: downloadLocked ? "none" : "auto" }}>
+                      <Download size={14} /><span>{downloadLocked ? "Download locked" : "Download .srt"}</span>
                     </button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard?.writeText(srt); }} style={{ flex: 1, justifyContent: "center", minWidth: 180 }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { if (!downloadLocked) navigator.clipboard?.writeText(srt); }}
+                      style={{ flex: 1, justifyContent: "center", minWidth: 180, opacity: downloadLocked ? 0.4 : 1, pointerEvents: downloadLocked ? "none" : "auto" }}>
                       <span>Copy to clipboard</span>
                     </button>
                   </div>
+                  {downloadLocked && (
+                    <p style={{ fontSize: 12, color: "var(--text-3)", textAlign: "center", marginBottom: 14 }}>
+                      Submit the feedback above to unlock your download.
+                    </p>
+                  )}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <button onClick={reset} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>Start over</button>
                     <Link href="/history" style={{ fontSize: 13, color: "var(--silver)", textDecoration: "none" }}>View history →</Link>
