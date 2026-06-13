@@ -71,6 +71,7 @@ function Dashboard() {
   const [overlayText, setOverlayText] = useState("");
   const [fonts,       setFonts]       = useState<string[]>([]);
   const [font,        setFont]        = useState("");
+  const [videoUrl,    setVideoUrl]    = useState("");
   const videoUrlRef   = useRef<string | null>(null);
 
   const selLang = LANGS.find((l) => l.code === lang);
@@ -100,7 +101,7 @@ function Dashboard() {
     if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current);
     const url = URL.createObjectURL(f);
     videoUrlRef.current = url;
-    if (videoRef.current) videoRef.current.src = url;
+    setVideoUrl(url);  // bind via state — the <video> element only mounts once `done` is true
 
     const scriptFonts = LANGS.find((l) => l.code === langCode)?.scriptFonts || [];
     const fontList = [...scriptFonts, ...LATIN_FONTS];
@@ -187,7 +188,7 @@ function Dashboard() {
     if (videoUrlRef.current) { URL.revokeObjectURL(videoUrlRef.current); videoUrlRef.current = null; }
     setStep(1); setFile(null); setVideo(false); setLang(""); setMode(""); setDensity(3);
     setGenerating(false); setDone(false); setProgress(0); setStage(""); setSrt("");
-    setCues([]); setOverlayText(""); setFonts([]); setFont("");
+    setCues([]); setOverlayText(""); setFonts([]); setFont(""); setVideoUrl("");
   };
 
   const download = () => {
@@ -479,7 +480,7 @@ function Dashboard() {
                   {video && (
                     <div style={{ marginBottom: 22 }}>
                       <div style={{ position: "relative", borderRadius: 14, overflow: "hidden", background: "#000", border: "1px solid var(--border)" }}>
-                        <video ref={videoRef} controls playsInline style={{ width: "100%", display: "block", maxHeight: 420 }}
+                        <video ref={videoRef} src={videoUrl} controls playsInline style={{ width: "100%", display: "block", maxHeight: 420 }}
                           onTimeUpdate={(e) => {
                             const t = e.currentTarget.currentTime;
                             const cue = cues.find((c) => t >= c.start && t < c.end);
