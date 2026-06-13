@@ -5,6 +5,14 @@ import { ClerkProvider } from "@clerk/nextjs";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 
+// Clerk publishable key. This is a PUBLIC key (it ships to the browser), so a
+// fallback to the test key is safe and guarantees the build never fails if the
+// env var is missing. Set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY in Vercel to override
+// (e.g. to swap in the pk_live key before launch).
+const CLERK_PK =
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
+  "pk_test_YXNzdXJpbmctbWFybW9zZXQtODQuY2xlcmsuYWNjb3VudHMuZGV2JA";
+
 // Match Clerk's hosted UI to the dark, monochrome SAYCAP theme.
 const clerkAppearance = {
   variables: {
@@ -35,7 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   };
 
   return (
-    <ClerkProvider appearance={clerkAppearance}>
+    <ClerkProvider publishableKey={CLERK_PK} appearance={clerkAppearance}>
     <html lang="en" className={dark ? "" : "light"} suppressHydrationWarning>
       <head>
         <title>SAYCAP — Captions that speak your language</title>
