@@ -1,9 +1,53 @@
 "use client";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Sun, Moon, Menu, X } from "lucide-react";
+import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from "@clerk/nextjs";
+import { API_URL } from "@/lib/saycap";
 
 interface Props { dark: boolean; onToggle: () => void; }
+
+// Small pill that shows the signed-in user's remaining caption minutes.
+function CreditsBadge() {
+  const { getToken, isSignedIn } = useAuth();
+  const [credits, setCredits] = useState<number | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(API_URL + "/credits", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setCredits(parseFloat((await res.json()).credits) || 0);
+    } catch { /* non-fatal */ }
+  }, [getToken]);
+
+  useEffect(() => {
+    if (!isSignedIn) { setCredits(null); return; }
+    refresh();
+    // Re-sync when the tab regains focus or a generate finishes (custom event).
+    const onFocus = () => refresh();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("saycap:credits", onFocus as EventListener);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("saycap:credits", onFocus as EventListener);
+    };
+  }, [isSignedIn, refresh]);
+
+  if (credits === null) return null;
+  const zero = credits <= 0;
+  return (
+    <span style={{
+      fontSize: 12, fontWeight: 700, letterSpacing: "-0.01em", whiteSpace: "nowrap",
+      padding: "6px 12px", borderRadius: 99,
+      background: zero ? "rgba(255,90,90,0.12)" : "var(--glass-bg-hi)",
+      border: `1px solid ${zero ? "rgba(255,90,90,0.4)" : "var(--border-mid)"}`,
+      color: zero ? "#ff7a7a" : "var(--silver)",
+    }}>
+      {zero ? "0 min left" : credits.toFixed(1) + " min left"}
+    </span>
+  );
+}
 
 export default function Navbar({ dark, onToggle }: Props) {
   const [scrolled, setScrolled] = useState(false);
@@ -68,9 +112,18 @@ export default function Navbar({ dark, onToggle }: Props) {
             {dark ? <Sun size={14} /> : <Moon size={14} />}
           </button>
 
-          <Link href="/dashboard" className="btn btn-primary btn-sm">
-            <span>Start free</span>
-          </Link>
+          <SignedIn>
+            <CreditsBadge />
+            <Link href="/dashboard" className="btn btn-primary btn-sm hidden md:flex">
+              <span>Dashboard</span>
+            </Link>
+            <UserButton afterSignOutUrl="/" />
+          </SignedIn>
+          <SignedOut>
+            <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+              <button className="btn btn-primary btn-sm"><span>Sign in</span></button>
+            </SignInButton>
+          </SignedOut>
 
           {/* Mobile menu toggle */}
           <button
@@ -102,9 +155,18 @@ export default function Navbar({ dark, onToggle }: Props) {
               style={{ display: "block", padding: "12px 0", fontSize: 16, fontWeight: 500, color: "var(--text-2)", textDecoration: "none", borderBottom: "1px solid var(--border)" }}
             >{l.label}</Link>
           ))}
-          <Link href="/dashboard" className="btn btn-primary" onClick={() => setOpen(false)} style={{ marginTop: 16, width: "100%", display: "flex" }}>
-            <span>Start free</span>
-          </Link>
+          <SignedIn>
+            <Link href="/dashboard" className="btn btn-primary" onClick={() => setOpen(false)} style={{ marginTop: 16, width: "100%", display: "flex" }}>
+              <span>Open dashboard</span>
+            </Link>
+          </SignedIn>
+          <SignedOut>
+            <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+              <button className="btn btn-primary" onClick={() => setOpen(false)} style={{ marginTop: 16, width: "100%", display: "flex" }}>
+                <span>Sign in</span>
+              </button>
+            </SignInButton>
+          </SignedOut>
         </div>
       )}
     </nav>

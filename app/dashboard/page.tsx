@@ -1,90 +1,186 @@
 "use client";
-import { useState, useCallback } from "react";
-import { Upload, Globe, Type, Download, Check, ChevronRight, FileAudio, X } from "lucide-react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { Upload, Globe, Type, Sliders, Download, Check, ChevronRight, FileAudio, FileVideo, X } from "lucide-react";
 import Link from "next/link";
+import { SignedIn, SignedOut, SignIn, useAuth } from "@clerk/nextjs";
+import {
+  API_URL, LANGS, MODES, DENSITIES, LATIN_FONTS,
+  ACCEPT_ATTR, isSupported, isVideo,
+  parseSRT, loadGoogleFont, type Cue,
+} from "@/lib/saycap";
 
 const STEPS = [
-  { id: 1, icon: Upload,   label: "Upload audio" },
+  { id: 1, icon: Upload,   label: "Upload" },
   { id: 2, icon: Globe,    label: "Language" },
   { id: 3, icon: Type,     label: "Output mode" },
-  { id: 4, icon: Download, label: "Generate" },
+  { id: 4, icon: Sliders,  label: "Density" },
+  { id: 5, icon: Download, label: "Generate" },
 ];
 
-const LANGS = [
-  { code: "te", name: "Telugu",       native: "తెలుగు" },
-  { code: "hi", name: "Hindi",        native: "हिन्दी" },
-  { code: "ta", name: "Tamil",        native: "தமிழ்" },
-  { code: "kn", name: "Kannada",      native: "ಕನ್ನಡ" },
-  { code: "ml", name: "Malayalam",    native: "മലയാളം" },
-  { code: "mr", name: "Marathi",      native: "मराठी" },
-  { code: "bn", name: "Bengali",      native: "বাংলা" },
-  { code: "gu", name: "Gujarati",     native: "ગુજરાતી" },
-  { code: "pa", name: "Punjabi",      native: "ਪੰਜਾਬੀ" },
-  { code: "or", name: "Odia",         native: "ଓଡ଼ିଆ" },
-  { code: "en", name: "English (IN)", native: "Indian accent" },
-];
+// ── Full-page login gate ────────────────────────────────────────────────────────
+function Gate() {
+  return (
+    <div style={{ minHeight: "100svh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 28, padding: "80px 20px", background: "var(--bg)" }}>
+      <div style={{ textAlign: "center" }}>
+        <h1 style={{ fontSize: "clamp(28px, 5vw, 44px)", fontWeight: 700, letterSpacing: "-0.04em", color: "var(--text-1)", marginBottom: 8 }}>
+          Sign in to SAYCAP
+        </h1>
+        <p style={{ fontSize: 14, color: "var(--text-3)", letterSpacing: "-0.01em" }}>
+          Log in to generate captions and access your history.
+        </p>
+      </div>
+      <SignIn routing="hash" forceRedirectUrl="/dashboard" />
+    </div>
+  );
+}
 
-const MODES = [
-  { id: "phonetic", name: "Phonetic", desc: "Roman letters, sounds as spoken. Best for audiences who can't read native script.", ex: '"నమస్తే" → "Namaste"', dot: "#C8C8C8" },
-  { id: "native",   name: "Native",   desc: "Original language script, properly formatted. Best for formal content.",            ex: '"Hello" → "హలో"',            dot: "#888" },
-  { id: "codemix",  name: "Codemix",  desc: "Telugu words in Telugu, English in English. Exactly how mixed speech is written.",  ex: '"నేను recently వెళ్ళాను"',      dot: "#666" },
-  { id: "english",  name: "English",  desc: "Full meaning-for-meaning translation. Best for global reach.",                      ex: '"నేను కష్టపడ్డాను" → "I worked hard"', dot: "#444" },
-];
+// ── Error modal ──────────────────────────────────────────────────────────────────
+function Modal({ title, msg, onClose }: { title: string; msg: string; onClose: () => void }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} className="card-skeu" style={{ maxWidth: 380, width: "100%", padding: 28, textAlign: "center" }}>
+        <p style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", color: "var(--text-1)", marginBottom: 8 }}>{title}</p>
+        <p style={{ fontSize: 13, color: "var(--text-3)", lineHeight: 1.5, marginBottom: 20 }}>{msg}</p>
+        <button className="btn btn-primary btn-sm" onClick={onClose} style={{ justifyContent: "center", width: "100%" }}><span>Got it</span></button>
+      </div>
+    </div>
+  );
+}
 
-const FORMATS = [
-  { id: "srt",  name: "SRT",      desc: "Premiere · CapCut · DaVinci" },
-  { id: "vtt",  name: "VTT",      desc: "Web players · YouTube" },
-  { id: "both", name: "Both",     desc: "SRT + VTT" },
-];
+// ── Dashboard ────────────────────────────────────────────────────────────────────
+function Dashboard() {
+  const { getToken } = useAuth();
 
-const SRT_PREVIEW = [
-  ["1","00:00:01,200 --> 00:00:02,400","Namaste andariki"],
-  ["2","00:00:02,600 --> 00:00:03,800","ee video lo manamu"],
-  ["3","00:00:04,000 --> 00:00:05,200","chala important topic"],
-  ["4","00:00:05,400 --> 00:00:06,600","gurinchi matladataamu"],
-];
-
-export default function Dashboard() {
   const [step,       setStep]       = useState(1);
   const [file,       setFile]       = useState<File | null>(null);
+  const [video,      setVideo]      = useState(false);
   const [dragging,   setDragging]   = useState(false);
   const [lang,       setLang]       = useState("");
   const [mode,       setMode]       = useState("");
-  const [format,     setFormat]     = useState("both");
+  const [density,    setDensity]    = useState(3);
   const [generating, setGenerating] = useState(false);
   const [done,       setDone]       = useState(false);
   const [progress,   setProgress]   = useState(0);
   const [stage,      setStage]      = useState("");
+  const [srt,        setSrt]        = useState("");
+  const [error,      setError]      = useState<{ title: string; msg: string } | null>(null);
+
+  // Video preview state
+  const videoRef    = useRef<HTMLVideoElement>(null);
+  const [cues,        setCues]        = useState<Cue[]>([]);
+  const [overlayText, setOverlayText] = useState("");
+  const [fonts,       setFonts]       = useState<string[]>([]);
+  const [font,        setFont]        = useState("");
+  const videoUrlRef   = useRef<string | null>(null);
+
+  const selLang = LANGS.find((l) => l.code === lang);
+  const selMode = MODES.find((m) => m.id === mode);
+  const selDensity = DENSITIES.find((d) => d.val === density);
 
   const handleFile = (f: File) => {
-    if (f && (f.name.endsWith(".mp3") || f.name.endsWith(".m4a"))) setFile(f);
+    if (!isSupported(f.name)) {
+      setError({ title: "Unsupported format", msg: "Please upload an audio file (MP3, M4A) or a video file (MP4, MOV, M4V)." });
+      return;
+    }
+    if (f.size > 1024 * 1024 * 1024) {
+      setError({ title: "File too large", msg: "Your file is over 1GB. Please use a smaller clip and try again." });
+      return;
+    }
+    setFile(f);
+    setVideo(isVideo(f.name));
   };
 
-  const runGenerate = useCallback(() => {
-    setGenerating(true); setProgress(0);
-    const stages: [number, string][] = [
-      [20, "Uploading your file..."],
-      [40, "Splitting into chunks..."],
-      [65, "Running speech-to-text..."],
-      [85, "Formatting caption output..."],
-      [100, "Finalising files..."],
-    ];
-    let i = 0;
-    const tick = () => {
-      if (i >= stages.length) { setTimeout(() => { setGenerating(false); setDone(true); }, 300); return; }
-      const [p, s] = stages[i]; setProgress(p); setStage(s); i++;
-      setTimeout(tick, 550 + Math.random() * 350);
-    };
-    setTimeout(tick, 200);
+  // Clean up the object URL when leaving / resetting.
+  useEffect(() => () => { if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current); }, []);
+
+  const setupVideoPreview = useCallback((srtText: string, f: File, langCode: string) => {
+    const parsed = parseSRT(srtText);
+    setCues(parsed);
+    if (videoUrlRef.current) URL.revokeObjectURL(videoUrlRef.current);
+    const url = URL.createObjectURL(f);
+    videoUrlRef.current = url;
+    if (videoRef.current) videoRef.current.src = url;
+
+    const scriptFonts = LANGS.find((l) => l.code === langCode)?.scriptFonts || [];
+    const fontList = [...scriptFonts, ...LATIN_FONTS];
+    fontList.forEach(loadGoogleFont);
+    setFonts(fontList);
+    setFont(fontList[0] || "sans-serif");
   }, []);
 
+  function handleError(status: number, msg: string) {
+    if (status === 402) {
+      try { const d = JSON.parse(msg); setError({ title: "Not enough credits", msg: d.needed ? `This file needs ${d.needed} min but you only have ${parseFloat(d.credits).toFixed(1)} min left. Contact your admin for more credits.` : "You have 0 credits remaining. Contact your admin to add more." }); }
+      catch { setError({ title: "Not enough credits", msg: "You don't have enough credits for this file." }); }
+    } else if (status === 413 || msg.includes("large")) setError({ title: "File too large", msg: "Your file is too large. Please try a shorter clip." });
+    else if (status === 422 || msg.includes("silent") || msg.includes("EMPTY")) setError({ title: "No speech detected", msg: "No clear speech was found. Make sure your audio has minimal background noise." });
+    else if (status === 429 || msg.includes("QUOTA")) setError({ title: "Service busy", msg: "The service is temporarily at capacity. Please wait a moment and try again." });
+    else if (status === 401 || status === 403) setError({ title: "Access denied", msg: "Authentication failed. Sign out fully, sign back in, and try again." });
+    else setError({ title: "Something went wrong", msg: "An unexpected error occurred. Please try again." });
+  }
+
+  const runGenerate = useCallback(async () => {
+    if (!file) return;
+    const token = await getToken();
+    if (!token) { setError({ title: "Session expired", msg: "Please sign in again and retry." }); return; }
+
+    setGenerating(true); setDone(false); setProgress(0); setStage("Uploading your file...");
+
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("fileName", file.name);
+    fd.append("sourceLanguage", lang);
+    fd.append("translationFormat", selMode?.apiValue || "phonetic");
+    fd.append("wordsPerCaption", String(density));
+
+    try {
+      const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", API_URL + "/generate", true);
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+        xhr.timeout = 600000;
+        // Real upload progress, capped at 90% — the rest is server-side work.
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setProgress(Math.min(90, Math.round((e.loaded / e.total) * 90)));
+        };
+        xhr.upload.onload = () => { setProgress(92); setStage("Transcribing & timing captions..."); };
+        xhr.onload = () => resolve({ status: xhr.status, body: xhr.responseText });
+        xhr.onerror = () => reject(new Error("CONNECTION_FAILED"));
+        xhr.ontimeout = () => reject(new Error("TIMEOUT"));
+        xhr.send(fd);
+      });
+
+      window.dispatchEvent(new Event("saycap:credits")); // refresh navbar balance
+
+      if (result.status !== 200) { setGenerating(false); handleError(result.status, result.body); return; }
+
+      setProgress(100);
+      setSrt(result.body);
+      if (video) setupVideoPreview(result.body, file, lang);
+      setGenerating(false);
+      setDone(true);
+    } catch (err: unknown) {
+      setGenerating(false);
+      const m = err instanceof Error ? err.message : "";
+      if (m === "TIMEOUT") setError({ title: "Processing timeout", msg: "This file took too long. Please try a shorter clip." });
+      else setError({ title: "Connection error", msg: "Could not reach the server. Check your internet and try again." });
+    }
+  }, [file, lang, density, selMode, video, getToken, setupVideoPreview]);
+
   const reset = () => {
-    setStep(1); setFile(null); setLang(""); setMode(""); setFormat("both");
-    setGenerating(false); setDone(false); setProgress(0); setStage("");
+    if (videoUrlRef.current) { URL.revokeObjectURL(videoUrlRef.current); videoUrlRef.current = null; }
+    setStep(1); setFile(null); setVideo(false); setLang(""); setMode(""); setDensity(3);
+    setGenerating(false); setDone(false); setProgress(0); setStage(""); setSrt("");
+    setCues([]); setOverlayText(""); setFonts([]); setFont("");
   };
 
-  const selLang = LANGS.find(l => l.code === lang);
-  const selMode = MODES.find(m => m.id === mode);
+  const download = () => {
+    const name = (file ? file.name.replace(/\.[^.]+$/, "") : "captions") + ".srt";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([srt], { type: "text/plain;charset=utf-8" }));
+    a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
 
   const card = (content: React.ReactNode) => (
     <div className="card-skeu" style={{ padding: "clamp(24px, 4vw, 40px)", minHeight: 360 }}>{content}</div>
@@ -92,21 +188,21 @@ export default function Dashboard() {
 
   return (
     <div style={{ minHeight: "100svh", paddingTop: 60, paddingBottom: 64, background: "var(--bg)" }}>
-      <div style={{ maxWidth: 620, margin: "0 auto", padding: "40px 20px 0" }}>
+      <div style={{ maxWidth: done && video ? 760 : 620, margin: "0 auto", padding: "40px 20px 0" }}>
 
         {/* Header */}
         <div style={{ marginBottom: 40 }}>
           <h1 style={{ fontSize: "clamp(28px, 5vw, 40px)", fontWeight: 800, letterSpacing: "-0.04em", color: "var(--text-1)", marginBottom: 6 }}>
             Generate Captions
           </h1>
-          <p style={{ fontSize: 14, color: "var(--text-3)", letterSpacing: "-0.01em" }}>Four steps. One perfect caption file.</p>
+          <p style={{ fontSize: 14, color: "var(--text-3)", letterSpacing: "-0.01em" }}>Five steps. One perfect caption file.</p>
         </div>
 
         {/* Step indicators */}
         <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
           {STEPS.map((s, i) => (
             <div key={s.id} style={{ display: "flex", alignItems: "center", flex: i < STEPS.length - 1 ? 1 : 0 }}>
-              <button onClick={() => { if (s.id < step) { setStep(s.id); setDone(false); setGenerating(false); } }}
+              <button onClick={() => { if (s.id < step && !generating) { setStep(s.id); setDone(false); } }}
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, background: "none", border: "none", cursor: s.id < step ? "pointer" : "default" }}>
                 <div style={{
                   width: 34, height: 34, borderRadius: "50%",
@@ -129,25 +225,27 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Progress bar */}
-        <div className="progress-track" style={{ marginBottom: 20 }}>
-          <div className="progress-fill" style={{ width: `${(step / 4) * 100}%` }} />
-        </div>
+        {/* Wizard progress bar */}
+        {!generating && !done && (
+          <div className="progress-track" style={{ marginBottom: 20 }}>
+            <div className="progress-fill" style={{ width: `${(step / 5) * 100}%` }} />
+          </div>
+        )}
 
         {/* Step 1 — Upload */}
-        {step === 1 && card(
+        {step === 1 && !generating && !done && card(
           <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <p className="t-label" style={{ marginBottom: 16 }}>Step 1 of 4</p>
-            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>Upload your audio</h2>
-            <p className="t-small" style={{ marginBottom: 24 }}>MP3 or M4A. Long files are split automatically — no manual trimming needed.</p>
+            <p className="t-label" style={{ marginBottom: 16 }}>Step 1 of 5</p>
+            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>Upload your audio or video</h2>
+            <p className="t-small" style={{ marginBottom: 24 }}>MP3, M4A, MP4, MOV. Long files are split automatically — no manual trimming needed.</p>
 
             {!file ? (
               <label className={`upload-zone ${dragging ? "drag-over" : ""}`}
                 style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 24px", gap: 12, cursor: "pointer" }}
-                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
                 onDragLeave={() => setDragging(false)}
-                onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}>
-                <input type="file" accept=".mp3,.m4a" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} style={{ display: "none" }} />
+                onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}>
+                <input type="file" accept={ACCEPT_ATTR} onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} style={{ display: "none" }} />
                 <div style={{ width: 48, height: 48, borderRadius: 14, background: "var(--bg3)", border: "1px solid var(--border-mid)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Upload size={20} color="var(--text-3)" />
                 </div>
@@ -155,20 +253,20 @@ export default function Dashboard() {
                   <p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-1)", marginBottom: 3 }}>
                     <span style={{ color: "var(--silver)" }}>Click to upload</span> or drag &amp; drop
                   </p>
-                  <p style={{ fontSize: 12, color: "var(--text-3)" }}>Your audio is deleted immediately after processing</p>
+                  <p style={{ fontSize: 12, color: "var(--text-3)" }}>Your file is deleted immediately after processing</p>
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {["MP3", "M4A", "Up to 500MB"].map(t => <span key={t} className="mono-tag">{t}</span>)}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center" }}>
+                  {["MP3", "M4A", "MP4", "MOV", "Up to 1GB"].map((t) => <span key={t} className="mono-tag">{t}</span>)}
                 </div>
               </label>
             ) : (
               <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 18px", borderRadius: 14, background: "var(--glass-bg)", border: "1px solid var(--border-mid)" }}>
                 <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--bg3)", border: "1px solid var(--border-mid)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <FileAudio size={18} color="var(--silver)" />
+                  {video ? <FileVideo size={18} color="var(--silver)" /> : <FileAudio size={18} color="var(--silver)" />}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</p>
-                  <p style={{ fontSize: 11, color: "var(--text-3)" }}>{(file.size / 1024 / 1024).toFixed(1)} MB</p>
+                  <p style={{ fontSize: 11, color: "var(--text-3)" }}>{(video ? "Video · " : "Audio · ") + (file.size / 1024 / 1024).toFixed(1)} MB</p>
                 </div>
                 <button onClick={() => setFile(null)} style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--bg3)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--text-3)" }}>
                   <X size={12} />
@@ -186,13 +284,13 @@ export default function Dashboard() {
         )}
 
         {/* Step 2 — Language */}
-        {step === 2 && card(
+        {step === 2 && !generating && !done && card(
           <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <p className="t-label" style={{ marginBottom: 16 }}>Step 2 of 4</p>
+            <p className="t-label" style={{ marginBottom: 16 }}>Step 2 of 5</p>
             <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>What language is spoken?</h2>
             <p className="t-small" style={{ marginBottom: 24 }}>SAYCAP handles code-mixed speech natively.</p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 24 }}>
-              {LANGS.map(l => (
+              {LANGS.map((l) => (
                 <button key={l.code} onClick={() => setLang(l.code)} className={`select-card ${lang === l.code ? "active" : ""}`} style={{ textAlign: "left" }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em" }}>{l.name}</div>
                   <div style={{ fontSize: 12, color: "var(--text-2)" }}>{l.native}</div>
@@ -210,37 +308,26 @@ export default function Dashboard() {
         )}
 
         {/* Step 3 — Mode */}
-        {step === 3 && card(
+        {step === 3 && !generating && !done && card(
           <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <p className="t-label" style={{ marginBottom: 16 }}>Step 3 of 4</p>
+            <p className="t-label" style={{ marginBottom: 16 }}>Step 3 of 5</p>
             <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>How should captions look?</h2>
-            <p className="t-small" style={{ marginBottom: 24 }}>Every line in your SRT and VTT follows this format.</p>
+            <p className="t-small" style={{ marginBottom: 24 }}>Every line in your SRT follows this format.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-              {MODES.map(m => (
-                <button key={m.id} onClick={() => setMode(m.id)} className={`select-card ${mode === m.id ? "active" : ""}`}
-                  style={{ display: "flex", alignItems: "flex-start", gap: 12, textAlign: "left" }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.dot, flexShrink: 0, marginTop: 4 }} />
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em", marginBottom: 2 }}>{m.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.5, marginBottom: 3 }}>{m.desc}</div>
-                    <div style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "monospace" }}>{m.ex}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div style={{ marginBottom: 20 }}>
-              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 10 }}>Output format</p>
-              <div style={{ display: "flex", gap: 8 }}>
-                {FORMATS.map(f => (
-                  <button key={f.id} onClick={() => setFormat(f.id)}
-                    style={{ flex: 1, padding: "10px 12px", borderRadius: 12, textAlign: "center", cursor: "pointer", transition: "all 0.2s",
-                      background: format === f.id ? "var(--glass-bg-hi)" : "var(--glass-bg)",
-                      border: `1px solid ${format === f.id ? "var(--silver)" : "var(--border)"}` }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.01em", color: format === f.id ? "var(--chrome)" : "var(--text-1)" }}>{f.name}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 2 }}>{f.desc}</div>
+              {MODES.map((m) => {
+                const label = m.id === "codemix" && selLang ? selLang.mix : m.name;
+                return (
+                  <button key={m.id} onClick={() => setMode(m.id)} className={`select-card ${mode === m.id ? "active" : ""}`}
+                    style={{ display: "flex", alignItems: "flex-start", gap: 12, textAlign: "left" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.dot, flexShrink: 0, marginTop: 4 }} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em", marginBottom: 2 }}>{label}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.5, marginBottom: 3 }}>{m.desc}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "monospace" }}>{m.ex}</div>
+                    </div>
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <button onClick={() => setStep(2)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
@@ -252,29 +339,53 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Step 4 — Review */}
+        {/* Step 4 — Density */}
         {step === 4 && !generating && !done && card(
           <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <p className="t-label" style={{ marginBottom: 16 }}>Step 4 of 4</p>
-            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 24 }}>Everything look right?</h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28 }}>
-              {[
-                { label: "Audio file", value: file?.name || "—", goto: 1 },
-                { label: "Language", value: selLang ? `${selLang.name} · ${selLang.native}` : "—", goto: 2 },
-                { label: "Output mode", value: selMode?.name || "—", goto: 3 },
-                { label: "Format", value: format.toUpperCase(), goto: 3 },
-              ].map(item => (
-                <div key={item.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderRadius: 12, background: "var(--glass-bg)", border: "1px solid var(--border)" }}>
-                  <div>
-                    <div style={{ fontSize: 11, color: "var(--text-3)", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600, marginBottom: 2 }}>{item.label}</div>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-1)", letterSpacing: "-0.01em" }}>{item.value}</div>
-                  </div>
-                  <button onClick={() => setStep(item.goto)} style={{ fontSize: 11, color: "var(--text-3)", background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>edit</button>
-                </div>
+            <p className="t-label" style={{ marginBottom: 16 }}>Step 4 of 5</p>
+            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 6 }}>How many words per caption?</h2>
+            <p className="t-small" style={{ marginBottom: 24 }}>3 words is the short-form standard for Reels, Shorts and YouTube.</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
+              {DENSITIES.map((d) => (
+                <button key={d.val} onClick={() => setDensity(d.val)} className={`select-card ${density === d.val ? "active" : ""}`}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em" }}>{d.label}</span>
+                  {d.val === 3 && <span className="mono-tag">Recommended</span>}
+                </button>
               ))}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <button onClick={() => setStep(3)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
+              <button className="btn btn-primary btn-sm" onClick={() => setStep(5)}>
+                <span>Continue</span><ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5 — Review */}
+        {step === 5 && !generating && !done && card(
+          <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
+            <p className="t-label" style={{ marginBottom: 16 }}>Step 5 of 5</p>
+            <h2 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", color: "var(--text-1)", marginBottom: 24 }}>Everything look right?</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 28 }}>
+              {[
+                { label: "File", value: file?.name || "—", goto: 1 },
+                { label: "Language", value: selLang ? `${selLang.name} · ${selLang.native}` : "—", goto: 2 },
+                { label: "Output mode", value: selMode ? (selMode.id === "codemix" && selLang ? selLang.mix : selMode.name) : "—", goto: 3 },
+                { label: "Caption density", value: selDensity?.label || "—", goto: 4 },
+              ].map((item) => (
+                <div key={item.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderRadius: 12, background: "var(--glass-bg)", border: "1px solid var(--border)" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 11, color: "var(--text-3)", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600, marginBottom: 2 }}>{item.label}</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text-1)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.value}</div>
+                  </div>
+                  <button onClick={() => setStep(item.goto)} style={{ fontSize: 11, color: "var(--text-3)", background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 8, padding: "4px 10px", cursor: "pointer", flexShrink: 0, marginLeft: 12 }}>edit</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <button onClick={() => setStep(4)} style={{ fontSize: 13, color: "var(--text-3)", background: "none", border: "none", cursor: "pointer" }}>← Back</button>
               <button className="btn btn-primary" onClick={runGenerate}><span>Generate captions</span></button>
             </div>
           </div>
@@ -307,32 +418,61 @@ export default function Dashboard() {
         {/* Done */}
         {done && card(
           <div style={{ animation: "slideUp 0.4s cubic-bezier(0.16,1,0.3,1) both" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
               <div style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(200,200,200,0.1)", border: "1px solid rgba(200,200,200,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Check size={13} color="var(--silver)" />
               </div>
               <span style={{ fontSize: 14, fontWeight: 500, color: "var(--silver)" }}>Captions ready</span>
               <span style={{ fontSize: 12, color: "var(--text-3)", marginLeft: 4 }}>
-                {selLang?.name} · {selMode?.name} · {format.toUpperCase()}
+                {selLang?.name} · {selMode ? (selMode.id === "codemix" && selLang ? selLang.mix : selMode.name) : ""} · {selDensity?.short}
               </span>
             </div>
 
-            <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", marginBottom: 20, maxHeight: 160, overflow: "auto", fontFamily: "monospace" }}>
-              {SRT_PREVIEW.map(([n, t, tx]) => (
-                <div key={n} className="srt-block">
-                  <div className="srt-n">{n}</div>
-                  <div className="srt-t">{t}</div>
-                  <div className="srt-txt">{tx}</div>
+            {/* Video preview with live caption overlay */}
+            {video && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ position: "relative", borderRadius: 14, overflow: "hidden", background: "#000", border: "1px solid var(--border)" }}>
+                  <video ref={videoRef} controls playsInline style={{ width: "100%", display: "block", maxHeight: 360 }}
+                    onTimeUpdate={(e) => {
+                      const t = e.currentTarget.currentTime;
+                      const cue = cues.find((c) => t >= c.start && t < c.end);
+                      setOverlayText(cue ? cue.text : "");
+                    }} />
+                  {overlayText && (
+                    <div style={{
+                      position: "absolute", left: 0, right: 0, bottom: "8%", textAlign: "center",
+                      padding: "0 16px", pointerEvents: "none",
+                      fontFamily: `'${font}', sans-serif`, fontWeight: 700, fontSize: "clamp(15px, 3.2vw, 26px)",
+                      color: "#fff", textShadow: "0 2px 6px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9)",
+                    }}>{overlayText}</div>
+                  )}
                 </div>
-              ))}
+                {fonts.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, color: "var(--text-3)" }}>Caption font</span>
+                    <select value={font} onChange={(e) => { loadGoogleFont(e.target.value); setFont(e.target.value); }}
+                      style={{ background: "var(--glass-bg)", border: "1px solid var(--border)", color: "var(--text-1)", borderRadius: 10, padding: "8px 12px", fontSize: 13, fontFamily: "inherit", outline: "none" }}>
+                      {fonts.map((f) => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                    {selLang && selLang.scriptFonts.length > 0 && (
+                      <span style={{ fontSize: 11, color: "var(--text-3)" }}>Pick a “Noto” font for native-script captions.</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SRT preview */}
+            <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px", marginBottom: 20, maxHeight: 220, overflow: "auto", fontFamily: "monospace", whiteSpace: "pre-wrap", fontSize: 12, color: "var(--text-1)", lineHeight: 1.6 }}>
+              {srt}
             </div>
 
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-              <button className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: "center" }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+              <button className="btn btn-primary btn-sm" onClick={download} style={{ flex: 1, justifyContent: "center", minWidth: 160 }}>
                 <Download size={14} /><span>Download .srt</span>
               </button>
-              <button className="btn btn-ghost btn-sm" style={{ flex: 1, justifyContent: "center" }}>
-                <Download size={14} /><span>Download .vtt</span>
+              <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard?.writeText(srt); }} style={{ flex: 1, justifyContent: "center", minWidth: 160 }}>
+                <span>Copy to clipboard</span>
               </button>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -342,6 +482,18 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {error && <Modal title={error.title} msg={error.msg} onClose={() => setError(null)} />}
     </div>
+  );
+}
+
+// ── Page: login gate, then dashboard ─────────────────────────────────────────────
+export default function DashboardPage() {
+  return (
+    <>
+      <SignedIn><Dashboard /></SignedIn>
+      <SignedOut><Gate /></SignedOut>
+    </>
   );
 }
