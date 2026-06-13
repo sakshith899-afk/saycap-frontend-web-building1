@@ -2,7 +2,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Upload, Globe, Type, Sliders, Download, Check, ChevronRight, FileAudio, FileVideo, X } from "lucide-react";
 import Link from "next/link";
-import { SignedIn, SignedOut, SignIn, useAuth } from "@clerk/nextjs";
+import { SignedIn, SignedOut, SignIn, useAuth, useUser } from "@clerk/nextjs";
 import {
   API_URL, LANGS, MODES, DENSITIES, LATIN_FONTS,
   ACCEPT_ATTR, isSupported, isVideo,
@@ -50,6 +50,13 @@ function Modal({ title, msg, onClose }: { title: string; msg: string; onClose: (
 // ── Dashboard ────────────────────────────────────────────────────────────────────
 function Dashboard() {
   const { getToken } = useAuth();
+  const { user } = useUser();
+  // Best human-readable identifier to store alongside the caption.
+  const username =
+    user?.username ||
+    user?.primaryEmailAddress?.emailAddress ||
+    user?.fullName ||
+    "";
 
   const [step,       setStep]       = useState(1);
   const [file,       setFile]       = useState<File | null>(null);
@@ -146,6 +153,7 @@ function Dashboard() {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("fileName", file.name);
+    fd.append("username", username);
     fd.append("sourceLanguage", lang);
     fd.append("translationFormat", selMode?.apiValue || "phonetic");
     fd.append("wordsPerCaption", String(density));
@@ -182,7 +190,7 @@ function Dashboard() {
       if (m === "TIMEOUT") setError({ title: "Processing timeout", msg: "This file took too long. Please try a shorter clip." });
       else setError({ title: "Connection error", msg: "Could not reach the server. Check your internet and try again." });
     }
-  }, [file, lang, density, selMode, video, getToken, setupVideoPreview]);
+  }, [file, lang, density, selMode, video, getToken, setupVideoPreview, username]);
 
   const reset = () => {
     if (videoUrlRef.current) { URL.revokeObjectURL(videoUrlRef.current); videoUrlRef.current = null; }
