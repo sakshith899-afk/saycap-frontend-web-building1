@@ -125,6 +125,21 @@ function Dashboard() {
     const token = await getToken();
     if (!token) { setError({ title: "Session expired", msg: "Please sign in again and retry." }); return; }
 
+    // Pre-flight credit check. The backend rejects a zero balance *before*
+    // reading the upload, which resets the connection mid-upload and surfaces
+    // as a generic network error. Checking here lets us show the real reason
+    // instantly and skip a doomed upload.
+    try {
+      const cr = await fetch(API_URL + "/credits", { headers: { Authorization: `Bearer ${token}` } });
+      if (cr.ok) {
+        const bal = parseFloat((await cr.json()).credits) || 0;
+        if (bal <= 0) {
+          setError({ title: "Not enough credits", msg: "You have 0 credits remaining. Contact your admin to add more." });
+          return;
+        }
+      }
+    } catch { /* if the check itself fails, fall through and let the upload surface the error */ }
+
     setGenerating(true); setDone(false); setProgress(0); setStage("Uploading your file...");
 
     const fd = new FormData();
