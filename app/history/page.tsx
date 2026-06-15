@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Download, Search, FileText, Loader2 } from "lucide-react";
+import { Download, Search, FileText, Loader2, Eye, X } from "lucide-react";
 import Link from "next/link";
 import { SignedIn, SignedOut, SignIn, useAuth } from "@clerk/nextjs";
 import { API_URL } from "@/lib/saycap";
@@ -38,6 +38,7 @@ function History() {
   const [loading, setLoading] = useState(true);
   const [failed,  setFailed]  = useState(false);
   const [search,  setSearch]  = useState("");
+  const [preview, setPreview] = useState<Caption | null>(null); // file open in the preview modal
 
   const load = useCallback(async () => {
     setLoading(true); setFailed(false);
@@ -56,6 +57,14 @@ function History() {
   }, [getToken]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Close the preview modal with the Escape key.
+  useEffect(() => {
+    if (!preview) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPreview(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [preview]);
 
   const filtered = items.filter((h) => h.file_name?.toLowerCase().includes(search.toLowerCase()));
 
@@ -118,6 +127,9 @@ function History() {
                     {item.created_at ? "Generated " + new Date(item.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : ""}
                   </span>
                 </div>
+                <button className="btn btn-ghost btn-sm" onClick={() => setPreview(item)} style={{ fontSize: 12, padding: "8px 14px", flexShrink: 0 }}>
+                  <Eye size={12} /><span>Preview</span>
+                </button>
                 <button className="btn btn-ghost btn-sm" onClick={() => downloadSrt(item)} style={{ fontSize: 12, padding: "8px 14px", flexShrink: 0 }}>
                   <Download size={12} /><span>.srt</span>
                 </button>
@@ -126,6 +138,50 @@ function History() {
           </div>
         )}
       </div>
+
+      {/* Preview modal: shows the SRT before downloading */}
+      {preview && (
+        <div
+          onClick={() => setPreview(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "fadeIn 0.18s ease both" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="card-skeu"
+            style={{ width: "100%", maxWidth: 640, maxHeight: "82vh", display: "flex", flexDirection: "column", padding: 0, overflow: "hidden", animation: "slideUp 0.28s cubic-bezier(0.16,1,0.3,1) both" }}
+          >
+            {/* Modal header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--bg3)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <FileText size={15} color="var(--text-3)" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-1)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview.file_name}</p>
+                <span style={{ fontSize: 11, color: "var(--text-3)" }}>Preview only. Nothing is changed.</span>
+              </div>
+              <button onClick={() => setPreview(null)} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)", padding: 6, display: "flex" }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* SRT body */}
+            <pre style={{ flex: 1, overflow: "auto", margin: 0, padding: "18px 20px", fontSize: 12.5, lineHeight: 1.7, color: "var(--text-2)", whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+              {preview.srt_content || "This file has no saved content."}
+            </pre>
+
+            {/* Modal footer */}
+            <div style={{ display: "flex", gap: 10, padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
+              <button className="btn btn-primary btn-sm" onClick={() => downloadSrt(preview)} style={{ flex: 1, justifyContent: "center" }}>
+                <Download size={13} /><span>Download .srt</span>
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setPreview(null)} style={{ justifyContent: "center", minWidth: 100 }}>
+                <span>Close</span>
+              </button>
+            </div>
+          </div>
+          <style>{`@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        </div>
+      )}
     </div>
   );
 }

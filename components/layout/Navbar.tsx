@@ -114,6 +114,9 @@ export default function Navbar({ dark, onToggle }: Props) {
 
           <SignedIn>
             <CreditsBadge />
+            <Link href="/history" className="btn btn-ghost btn-sm hidden md:flex">
+              <span>History</span>
+            </Link>
             <Link href="/dashboard" className="btn btn-primary btn-sm hidden md:flex">
               <span>Dashboard</span>
             </Link>
@@ -158,6 +161,9 @@ export default function Navbar({ dark, onToggle }: Props) {
           <SignedIn>
             <Link href="/dashboard" className="btn btn-primary" onClick={() => setOpen(false)} style={{ marginTop: 16, width: "100%", display: "flex" }}>
               <span>Open dashboard</span>
+            </Link>
+            <Link href="/history" className="btn btn-ghost" onClick={() => setOpen(false)} style={{ marginTop: 10, width: "100%", display: "flex" }}>
+              <span>Caption history</span>
             </Link>
           </SignedIn>
           <SignedOut>
