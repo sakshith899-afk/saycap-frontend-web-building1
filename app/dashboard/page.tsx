@@ -4,7 +4,7 @@ import { Upload, Globe, Type, Sliders, Download, Check, ChevronRight, FileAudio,
 import Link from "next/link";
 import { SignedIn, SignedOut, SignIn, useAuth, useUser } from "@clerk/nextjs";
 import {
-  API_URL, LANGS, MODES, DENSITIES,
+  API_URL, LANGS, MODES, DENSITIES, exampleFor,
   ACCEPT_ATTR, isSupported, isVideo,
   parseSRT, type Cue,
 } from "@/lib/saycap";
@@ -434,14 +434,18 @@ function Dashboard() {
                   <div className="dash-mode-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 26 }}>
                     {MODES.map((m) => {
                       const label = m.id === "codemix" && selLang ? selLang.mix : m.name;
+                      const ex = exampleFor(selLang?.code, m.id);
                       return (
                         <button key={m.id} onClick={() => setMode(m.id)} className={`select-card ${mode === m.id ? "active" : ""}`}
                           style={{ display: "flex", alignItems: "flex-start", gap: 12, textAlign: "left" }}>
                           <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.dot, flexShrink: 0, marginTop: 5 }} />
                           <div>
-                            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em", marginBottom: 3 }}>{label}</div>
-                            <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5, marginBottom: 4 }}>{m.desc}</div>
-                            <div style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "monospace" }}>{m.ex}</div>
+                            <div style={{ marginBottom: 3, lineHeight: 1.4 }}>
+                              <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-1)", letterSpacing: "-0.01em" }}>{label}</span>
+                              {" "}
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent, var(--text-1))" }}>({ex})</span>
+                            </div>
+                            <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>{m.desc}</div>
                           </div>
                         </button>
                       );

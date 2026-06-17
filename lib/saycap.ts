@@ -44,11 +44,34 @@ export interface Mode {
 }
 
 export const MODES: Mode[] = [
-  { id: "phonetic", apiValue: "phonetic",   name: "Phonetic", desc: "Roman letters, sounds as spoken. Best for audiences who can't read native script.", ex: '"నమస్తే" → "Namaste"',           dot: "#C8C8C8" },
-  { id: "native",   apiValue: "transcribe", name: "Native",   desc: "Original language script, properly formatted. Best for formal content.",              ex: '"Hello" → "హలో"',                dot: "#888" },
-  { id: "codemix",  apiValue: "codemix",    name: "Codemix",  desc: "Native words in native script, English in English. Exactly how mixed speech is written.", ex: '"నేను recently వెళ్ళాను"',         dot: "#666" },
-  { id: "english",  apiValue: "translate",  name: "English",  desc: "Full meaning-for-meaning translation to English. Best for global reach.",              ex: '"నేను కష్టపడ్డాను" → "I worked hard"', dot: "#444" },
+  { id: "phonetic", apiValue: "phonetic",   name: "Phonetic", desc: "Roman letters, sounds as spoken. Best for audiences who can't read native script.", ex: "నమస్తే → Namaste",           dot: "#C8C8C8" },
+  { id: "native",   apiValue: "transcribe", name: "Native",   desc: "Original language script, properly formatted. Best for formal content.",              ex: "Hello → హలో",                dot: "#888" },
+  { id: "codemix",  apiValue: "codemix",    name: "Codemix",  desc: "Native words in native script, English in English. Exactly how mixed speech is written.", ex: "నేను recently వెళ్ళాను",         dot: "#666" },
+  { id: "english",  apiValue: "translate",  name: "English",  desc: "Full meaning-for-meaning translation to English. Best for global reach.",              ex: "నేను కష్టపడ్డాను → I worked hard", dot: "#444" },
 ];
+
+// Real example for each mode, written in the chosen language's own script so a
+// Malayalam user sees Malayalam, a Hindi user sees Hindi, etc. Keyed by language
+// code, then by mode id. Falls back to Telugu (the MODES defaults) if missing.
+export const MODE_EXAMPLES: Record<string, Record<string, string>> = {
+  "te-IN": { phonetic: "నమస్తే → Namaste",      native: "Hello → హలో",     codemix: "నేను recently వెళ్ళాను",     english: "నేను కష్టపడ్డాను → I worked hard" },
+  "hi-IN": { phonetic: "नमस्ते → Namaste",       native: "Hello → हैलो",    codemix: "मैं recently गया",           english: "मैंने मेहनत की → I worked hard" },
+  "ta-IN": { phonetic: "வணக்கம் → Vanakkam",     native: "Hello → ஹலோ",     codemix: "நான் recently போனேன்",       english: "நான் கடினமாக உழைத்தேன் → I worked hard" },
+  "kn-IN": { phonetic: "ನಮಸ್ಕಾರ → Namaskara",    native: "Hello → ಹಲೋ",     codemix: "ನಾನು recently ಹೋದೆ",         english: "ನಾನು ಕಷ್ಟಪಟ್ಟೆ → I worked hard" },
+  "ml-IN": { phonetic: "നമസ്കാരം → Namaskaram",  native: "Hello → ഹലോ",     codemix: "ഞാൻ recently പോയി",         english: "ഞാൻ കഠിനാധ്വാനം ചെയ്തു → I worked hard" },
+  "mr-IN": { phonetic: "नमस्कार → Namaskar",     native: "Hello → हॅलो",    codemix: "मी recently गेलो",           english: "मी मेहनत केली → I worked hard" },
+  "bn-IN": { phonetic: "নমস্কার → Nomoskar",     native: "Hello → হ্যালো",  codemix: "আমি recently গিয়েছিলাম",     english: "আমি কঠোর পরিশ্রম করেছি → I worked hard" },
+  "gu-IN": { phonetic: "નમસ્તે → Namaste",       native: "Hello → હેલો",    codemix: "હું recently ગયો",           english: "મેં મહેનત કરી → I worked hard" },
+  "pa-IN": { phonetic: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ → Sat Sri Akal", native: "Hello → ਹੈਲੋ", codemix: "ਮੈਂ recently ਗਿਆ",        english: "ਮੈਂ ਮਿਹਨਤ ਕੀਤੀ → I worked hard" },
+  "od-IN": { phonetic: "ନମସ୍କାର → Namaskar",     native: "Hello → ହେଲୋ",    codemix: "ମୁଁ recently ଗଲି",           english: "ମୁଁ କଠିନ ପରିଶ୍ରମ କଲି → I worked hard" },
+  "en-IN": { phonetic: "Hello → Hello",          native: "Hello → Hello",   codemix: "I went there recently",      english: "I worked hard → I worked hard" },
+};
+
+// Returns the mode example in the chosen language's script (Telugu fallback).
+export function exampleFor(langCode: string | undefined, modeId: string): string {
+  const map = (langCode && MODE_EXAMPLES[langCode]) || MODE_EXAMPLES["te-IN"];
+  return map[modeId] || MODE_EXAMPLES["te-IN"][modeId];
+}
 
 // ── Caption density (wordsPerCaption) ────────────────────────────────────────────
 export const DENSITIES: { val: number; label: string; short: string }[] = [
