@@ -1,7 +1,6 @@
 "use client";
 import "./globals.css";
 import { useState, useEffect } from "react";
-import Script from "next/script";
 import { ClerkProvider } from "@clerk/nextjs";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -35,6 +34,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     if (saved === "light") setDark(false);
   }, []);
 
+  // SketricGen floating chat widget. The vendor script discovers itself by
+  // scanning the DOM for a <script> whose src contains "sketric"/"gen" and
+  // reads its data-* attributes off that element, so we inject a real script
+  // tag (exactly like their copy-paste snippet) rather than via next/script.
+  useEffect(() => {
+    if (document.getElementById("sketric-widget")) return;
+    const s = document.createElement("script");
+    s.id = "sketric-widget";
+    s.src = "https://jswidget.sketricgen.ai/widget-embed.js";
+    s.async = true;
+    s.setAttribute("data-agent-id", "skbrand_4943e1ec-05f2-4b2c-b7d0-75b317440425");
+    s.setAttribute("data-layout", "floating");
+    document.body.appendChild(s);
+  }, []);
+
   const toggle = () => {
     setDark(d => {
       const next = !d;
@@ -56,13 +70,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Navbar dark={dark} onToggle={toggle} />
         <main>{children}</main>
         <Footer />
-        {/* SketricGen floating chat widget */}
-        <Script
-          src="https://jswidget.sketricgen.ai/widget-embed.js"
-          data-agent-id="skbrand_4943e1ec-05f2-4b2c-b7d0-75b317440425"
-          data-layout="floating"
-          strategy="afterInteractive"
-        />
       </body>
     </html>
     </ClerkProvider>
