@@ -1,6 +1,7 @@
 "use client";
 import "./globals.css";
 import { useState, useEffect } from "react";
+import Script from "next/script";
 import { ClerkProvider } from "@clerk/nextjs";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -55,6 +56,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Navbar dark={dark} onToggle={toggle} />
         <main>{children}</main>
         <Footer />
+        {/* SketricGen floating chat widget */}
+        <Script
+          src="https://jswidget.sketricgen.ai/widget-embed.js"
+          data-agent-id="skbrand_4943e1ec-05f2-4b2c-b7d0-75b317440425"
+          data-layout="floating"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
     </ClerkProvider>
